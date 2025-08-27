@@ -1,10 +1,10 @@
 name: Release
 
-on:
-  push:
-    # Build and publish artifacts for a release
-    tags:
-      - "v*.*.*"
+on: workflow_dispatch
+  # push:
+  #   # Build and publish artifacts for a release
+  #   tags:
+  #     - "v*.*.*"
 
 jobs:
   build:
