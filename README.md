@@ -5,6 +5,10 @@ Provider for OCI Vault allows you to get secrets stored in OCI Vault and mount t
 
 The provider is a gRPC server accessible via the Unix domain socket. It's interface is defined by the Secrets Store CSI driver. Secrets Store CSI Driver requests the provider's API in order to mount secrets onto the pods.
 
+## ARM64 Installation
+
+Please have a look [here](./ARM-install.md)
+
 ## Getting Started
 
 Please have a look at [Getting Started](./GettingStarted.md)

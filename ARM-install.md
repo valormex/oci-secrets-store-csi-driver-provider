@@ -1,5 +1,8 @@
 # 🔹 Overview: CSI Driver + OCI Provider Installation (ARM64 / MicroK8s)
 
+**Note:** Authentication is handled via **Oracle Cloud Instance Principals**.  
+It is assumed that you are running inside an Oracle Cloud instance, and the provider uses that identity for authentication.
+
 ---
 
 ## 1. Install CSI Driver (Helm)
@@ -24,39 +27,13 @@ sudo microk8s helm install csi-secrets-store \
 
 ## 2. Build OCI Provider Image for ARM64 (GitHub Actions)
 
-The official Oracle image is **amd64 only** → you need your own.
+The official Oracle image is **amd64 only**
 
-1. **Create your own repo** (e.g. `oci-provider-arm64`).
+1. Fork the code from [oracle/oci-secrets-store-csi-driver-provider](https://github.com/oracle/oci-secrets-store-csi-driver-provider) or add it as a submodule to control versioning and other configuration details.
 
-2. In the repo: Fork the code from [oracle/oci-secrets-store-csi-driver-provider](https://github.com/oracle/oci-secrets-store-csi-driver-provider) or add it as a submodule.
+2. `Dockerfile` is available in `/build`
 
-3. Add a `Dockerfile` at the root (simplified):
-
-```dockerfile
-# Stage 1: Build provider
-FROM golang:1.24 AS builder
-
-WORKDIR /workspace
-
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY . .
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o provider ./cmd/server
-
-# Stage 2: Runtime
-FROM gcr.io/distroless/static:nonroot
-
-WORKDIR /
-COPY --from=builder /workspace/provider /opt/provider/bin/provider
-
-USER nonroot:nonroot
-
-ENTRYPOINT ["/opt/provider/bin/provider"]
-```
-
-4. Create a workflow `.github/workflows/build.yaml`:
+3. Create a workflow `.github/workflows/build.yaml` and run it:
 
 ```yaml
 name: Build & Push OCI Provider (ARM64)
@@ -86,12 +63,19 @@ jobs:
         cache-to: type=gha,mode=max
 ```
 
-5. Start the workflow in the GitHub Actions UI → the image will be available at
-   `ghcr.io/<YOUR_GITHUB_USER>/oci-secrets-provider:arm64`.
-
 ---
 
 ## 3. Install OCI Provider in the Cluster
+
+Create GHCR docker-registry Secret in Kubernetes to pull private image:
+
+```bash
+sudo microk8s kubectl create secret docker-registry <ghcr-secret-name> \
+  --docker-server=ghcr.io \
+  --docker-username=my-github-user \
+  --docker-password=ghp_abcdef123456... \
+  -n <namespace>
+```
 
 Use the Helm chart from Oracle repo, but set your own image:
 
@@ -102,7 +86,7 @@ sudo microk8s helm repo update
 sudo microk8s helm upgrade oci-provider \
   oci-provider/oci-secrets-store-csi-driver-provider \
   --set secrets-store-csi-driver.install=false \
-  --set provider.image.repository=ghcr.io/valormex/oci-secrets-store-csi-driver-provider/oci-secrets-provider \
+  --set provider.image.repository=ghcr.io/<USER_OR_ORGA>/oci-secrets-store-csi-driver-provider/oci-secrets-provider \
   --set provider.image.tag=arm64 \
   --set provider.imagePullSecrets[0].name=ghcr-secret \
   -n kube-system
@@ -114,74 +98,30 @@ sudo microk8s helm upgrade oci-provider \
 
 ## 4. Define SecretProviderClass
 
-In your GitOps/repo you define which secrets are retrieved from OCI Vault:
+In your GitOps/repo you define which secrets are retrieved from OCI Vault, for example:
 
 ```yaml
 apiVersion: secrets-store.csi.x-k8s.io/v1
 kind: SecretProviderClass
 metadata:
-  name: db-secrets
-  namespace: default
+  name: minio-secret-bundle
+  namespace: minio
 spec:
   provider: oci
   parameters:
+    authType: instance
+    vaultId: "ocid1.vault.oc1.eu-frankfurt-1.enukrh6baabfgt..."
     secrets: |
-      - name: "db-password"
-        vaultOcid: "<VAULT_OCID>"
-        secretOcid: "<SECRET_OCID>"
+      - name: "minio-access-key"
+        fileName: "minio-access-key"
+      - name: "minio-secret-key"
+        fileName: "minio-secret-key"
+  secretObjects:
+    - secretName: minio-secret
+      type: Opaque
+      data:
+        - objectName: "minio-access-key"
+          key: MINIO_ACCESS_KEY
+        - objectName: "minio-secret-key"
+          key: MINIO_SECRET_KEY
 ```
-
-**Note:** Authentication is handled via **Oracle Cloud Instance Principals**.  
-It is assumed that you are running inside an Oracle Cloud instance, and the provider uses that identity for authentication.
-
----
-
-## 5. Test Deployment
-
-Simple Nginx pod mounting the secret:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-secrets-test
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: nginx-secrets-test
-  template:
-    metadata:
-      labels:
-        app: nginx-secrets-test
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:alpine
-        volumeMounts:
-        - name: secrets-store
-          mountPath: "/mnt/secrets"
-          readOnly: true
-      volumes:
-      - name: secrets-store
-        csi:
-          driver: secrets-store.csi.k8s.io
-          readOnly: true
-          volumeAttributes:
-            secretProviderClass: "db-secrets"
-```
-
-Check inside the pod:
-
-```bash
-sudo microk8s kubectl exec -it deploy/nginx-secrets-test -- cat /mnt/secrets/db-password
-```
-
----
-
-# ✅ Summary
-
-1. **Install CSI Driver** → Helm from CNCF repo.
-2. **Build your own ARM64 OCI Provider image** → GitHub Actions + Dockerfile.
-3. **Install OCI Provider** → Helm Chart with `--set image.repository` + `--set image.tag`.
-4. **SecretProviderClass** + Deployment → secrets are fetched live from OCI Vault via Instance Principals.
