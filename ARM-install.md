@@ -83,7 +83,7 @@ Use the Helm chart from Oracle repo, but set your own image:
 sudo microk8s helm repo add oci-provider https://oracle.github.io/oci-secrets-store-csi-driver-provider/charts
 sudo microk8s helm repo update
 
-sudo microk8s helm upgrade oci-provider \
+sudo microk8s helm install oci-provider \
   oci-provider/oci-secrets-store-csi-driver-provider \
   --set secrets-store-csi-driver.install=false \
   --set provider.image.repository=ghcr.io/<USER_OR_ORGA>/oci-secrets-store-csi-driver-provider/oci-secrets-provider \
