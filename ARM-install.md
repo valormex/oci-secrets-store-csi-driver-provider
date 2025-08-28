@@ -70,11 +70,11 @@ jobs:
 Create GHCR docker-registry Secret in Kubernetes to pull private image:
 
 ```bash
-sudo microk8s kubectl create secret docker-registry <ghcr-secret-name> \
+sudo microk8s kubectl create secret docker-registry ghcr-secret \
   --docker-server=ghcr.io \
-  --docker-username=my-github-user \
-  --docker-password=ghp_abcdef123456... \
-  -n <namespace>
+  --docker-username=<USERNAME> \
+  --docker-password=<TOKEN> \
+  -n kube-system
 ```
 
 Use the Helm chart from Oracle repo, but set your own image:
